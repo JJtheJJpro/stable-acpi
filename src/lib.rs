@@ -32,7 +32,7 @@
 //! interfaces, such as [`PlatformInfo`], [`PciConfigRegions`], or [`HpetInfo`].
 
 #![no_std]
-#![feature(allocator_api)]
+// JJ here, `#![feature(allocator_api)]` was the main cause and issue for stability.  The rest is changed in the platform directory.
 
 #[cfg_attr(test, macro_use)]
 #[cfg(test)]
@@ -55,8 +55,7 @@ pub use sdt::{fadt::PowerProfile, hpet::HpetInfo, madt::MadtError};
 
 use crate::sdt::{SdtHeader, Signature};
 use core::{
-    fmt,
-    mem,
+    fmt, mem,
     ops::{Deref, DerefMut},
     pin::Pin,
     ptr::NonNull,

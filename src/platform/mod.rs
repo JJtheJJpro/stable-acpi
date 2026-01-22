@@ -5,10 +5,7 @@ pub use interrupt::InterruptModel;
 pub use pci::PciConfigRegions;
 
 use crate::{
-    AcpiError,
-    AcpiTables,
-    Handler,
-    PowerProfile,
+    AcpiError, AcpiTables, Handler, PowerProfile,
     address::GenericAddress,
     registers::{FixedRegisters, Pm1ControlBit, Pm1Event},
     sdt::{
@@ -17,52 +14,42 @@ use crate::{
         madt::{Madt, MadtError, MpProtectedModeWakeupCommand, MultiprocessorWakeupMailbox},
     },
 };
-use alloc::{alloc::Global, sync::Arc, vec::Vec};
-use core::{alloc::Allocator, mem, ptr};
+use alloc::{sync::Arc, vec::Vec};
+use core::{mem, ptr};
 
 /// `AcpiPlatform` is a higher-level view of the ACPI tables that makes it easier to perform common
 /// tasks with ACPI. It requires allocator support.
-pub struct AcpiPlatform<H: Handler, A: Allocator = Global> {
+pub struct AcpiPlatform<H: Handler> {
     pub handler: H,
     pub tables: AcpiTables<H>,
     pub power_profile: PowerProfile,
-    pub interrupt_model: InterruptModel<A>,
+    pub interrupt_model: InterruptModel,
     /// The interrupt vector that the System Control Interrupt (SCI) is wired to. On x86 systems with
     /// an 8259, this is the interrupt vector. On other systems, this is the GSI of the SCI
     /// interrupt. The interrupt should be treated as a shareable, level, active-low interrupt.
     pub sci_interrupt: u16,
     /// On `x86_64` platforms that support the APIC, the processor topology must also be inferred from the
     /// interrupt model. That information is stored here, if present.
-    pub processor_info: Option<ProcessorInfo<A>>,
+    pub processor_info: Option<ProcessorInfo>,
     pub pm_timer: Option<PmTimer>,
     pub registers: Arc<FixedRegisters<H>>,
 }
 
-unsafe impl<H, A> Send for AcpiPlatform<H, A>
-where
-    H: Handler,
-    A: Allocator,
-{
-}
-unsafe impl<H, A> Sync for AcpiPlatform<H, A>
-where
-    H: Handler,
-    A: Allocator,
-{
-}
+unsafe impl<H> Send for AcpiPlatform<H> where H: Handler {}
+unsafe impl<H> Sync for AcpiPlatform<H> where H: Handler {}
 
-impl<H: Handler> AcpiPlatform<H, Global> {
+impl<H: Handler> AcpiPlatform<H> {
     pub fn new(tables: AcpiTables<H>, handler: H) -> Result<Self, AcpiError> {
-        Self::new_in(tables, handler, alloc::alloc::Global)
+        Self::new_in(tables, handler)
     }
 }
 
-impl<H: Handler, A: Allocator + Clone> AcpiPlatform<H, A> {
-    pub fn new_in(tables: AcpiTables<H>, handler: H, allocator: A) -> Result<Self, AcpiError> {
+impl<H: Handler> AcpiPlatform<H> {
+    pub fn new_in(tables: AcpiTables<H>, handler: H) -> Result<Self, AcpiError> {
         let Some(fadt) = tables.find_table::<Fadt>() else { Err(AcpiError::TableNotFound(Signature::FADT))? };
         let power_profile = fadt.power_profile();
 
-        let (interrupt_model, processor_info) = InterruptModel::new_in(&tables, allocator)?;
+        let (interrupt_model, processor_info) = InterruptModel::new_in(&tables)?;
         let pm_timer = PmTimer::new(&fadt)?;
         let registers = Arc::new(FixedRegisters::new(&fadt, handler.clone())?);
 
@@ -226,14 +213,14 @@ pub struct Processor {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProcessorInfo<A: Allocator = Global> {
+pub struct ProcessorInfo {
     pub boot_processor: Processor,
     /// Application processors should be brought up in the order they're defined in this list.
-    pub application_processors: Vec<Processor, A>,
+    pub application_processors: Vec<Processor>,
 }
 
-impl<A: Allocator> ProcessorInfo<A> {
-    pub(crate) fn new_in(boot_processor: Processor, application_processors: Vec<Processor, A>) -> Self {
+impl ProcessorInfo {
+    pub(crate) fn new_in(boot_processor: Processor, application_processors: Vec<Processor>) -> Self {
         Self { boot_processor, application_processors }
     }
 }

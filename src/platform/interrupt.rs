@@ -1,23 +1,20 @@
 use super::{Processor, ProcessorInfo, ProcessorState};
 use crate::{
-    AcpiError,
-    AcpiTables,
-    Handler,
-    MadtError,
+    AcpiError, AcpiTables, Handler, MadtError,
     sdt::{
         Signature,
         madt::{Madt, MadtEntry, parse_mps_inti_flags},
     },
 };
-use alloc::{alloc::Global, vec::Vec};
+use alloc::vec::Vec;
 use bit_field::BitField;
-use core::{alloc::Allocator, pin::Pin};
+use core::pin::Pin;
 
 pub use crate::sdt::madt::{Polarity, TriggerMode};
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub enum InterruptModel<A: Allocator = Global> {
+pub enum InterruptModel {
     /// This model is only chosen when the MADT does not describe another interrupt model. On `x86_64` platforms,
     /// this probably means only the legacy i8259 PIC is present.
     Unknown,
@@ -25,22 +22,19 @@ pub enum InterruptModel<A: Allocator = Global> {
     /// Describes an interrupt controller based around the Advanced Programmable Interrupt Controller (any of APIC,
     /// XAPIC, or X2APIC). These are likely to be found on x86 and x86_64 systems and are made up of a Local APIC
     /// for each core and one or more I/O APICs to handle external interrupts.
-    Apic(Apic<A>),
+    Apic(Apic),
 }
 
-impl InterruptModel<Global> {
-    pub fn new<H: Handler>(
-        tables: &AcpiTables<H>,
-    ) -> Result<(InterruptModel<Global>, Option<ProcessorInfo<Global>>), AcpiError> {
-        Self::new_in(tables, Global)
+impl InterruptModel {
+    pub fn new<H: Handler>(tables: &AcpiTables<H>) -> Result<(InterruptModel, Option<ProcessorInfo>), AcpiError> {
+        Self::new_in(tables)
     }
 }
 
-impl<A: Allocator + Clone> InterruptModel<A> {
+impl InterruptModel {
     pub fn new_in<H: Handler>(
         tables: &AcpiTables<H>,
-        allocator: A,
-    ) -> Result<(InterruptModel<A>, Option<ProcessorInfo<A>>), AcpiError> {
+    ) -> Result<(InterruptModel, Option<ProcessorInfo>), AcpiError> {
         let Some(madt) = tables.find_table::<Madt>() else { Err(AcpiError::TableNotFound(Signature::MADT))? };
 
         /*
@@ -55,7 +49,7 @@ impl<A: Allocator + Clone> InterruptModel<A> {
                 | MadtEntry::LocalApicNmi(_)
                 | MadtEntry::X2ApicNmi(_)
                 | MadtEntry::LocalApicAddressOverride(_) => {
-                    return Self::from_apic_model_in(madt.get(), allocator);
+                    return Self::from_apic_model_in(madt.get());
                 }
 
                 MadtEntry::IoSapic(_) | MadtEntry::LocalSapic(_) | MadtEntry::PlatformInterruptSource(_) => {}
@@ -74,10 +68,7 @@ impl<A: Allocator + Clone> InterruptModel<A> {
         Ok((InterruptModel::Unknown, None))
     }
 
-    fn from_apic_model_in(
-        madt: Pin<&Madt>,
-        allocator: A,
-    ) -> Result<(InterruptModel<A>, Option<ProcessorInfo<A>>), AcpiError> {
+    fn from_apic_model_in(madt: Pin<&Madt>) -> Result<(InterruptModel, Option<ProcessorInfo>), AcpiError> {
         let mut local_apic_address = madt.local_apic_address as u64;
         let mut io_apic_count = 0;
         let mut iso_count = 0;
@@ -99,11 +90,11 @@ impl<A: Allocator + Clone> InterruptModel<A> {
             }
         }
 
-        let mut io_apics = Vec::with_capacity_in(io_apic_count, allocator.clone());
-        let mut interrupt_source_overrides = Vec::with_capacity_in(iso_count, allocator.clone());
-        let mut nmi_sources = Vec::with_capacity_in(nmi_source_count, allocator.clone());
-        let mut local_apic_nmi_lines = Vec::with_capacity_in(local_nmi_line_count, allocator.clone());
-        let mut application_processors = Vec::with_capacity_in(processor_count.saturating_sub(1), allocator); // Subtract one for the BSP
+        let mut io_apics = Vec::with_capacity(io_apic_count);
+        let mut interrupt_source_overrides = Vec::with_capacity(iso_count);
+        let mut nmi_sources = Vec::with_capacity(nmi_source_count);
+        let mut local_apic_nmi_lines = Vec::with_capacity(local_nmi_line_count);
+        let mut application_processors = Vec::with_capacity(processor_count.saturating_sub(1)); // Subtract one for the BSP
         let mut boot_processor = None;
 
         for entry in madt.entries() {
@@ -300,12 +291,12 @@ pub struct NmiSource {
 }
 
 #[derive(Debug, Clone)]
-pub struct Apic<A: Allocator = Global> {
+pub struct Apic {
     pub local_apic_address: u64,
-    pub io_apics: Vec<IoApic, A>,
-    pub local_apic_nmi_lines: Vec<NmiLine, A>,
-    pub interrupt_source_overrides: Vec<InterruptSourceOverride, A>,
-    pub nmi_sources: Vec<NmiSource, A>,
+    pub io_apics: Vec<IoApic>,
+    pub local_apic_nmi_lines: Vec<NmiLine>,
+    pub interrupt_source_overrides: Vec<InterruptSourceOverride>,
+    pub nmi_sources: Vec<NmiSource>,
 
     /// If this field is set, you must remap and mask all the lines of the legacy PIC, even if
     /// you choose to use the APIC. It's recommended that you do this even if ACPI does not
@@ -313,13 +304,13 @@ pub struct Apic<A: Allocator = Global> {
     pub also_has_legacy_pics: bool,
 }
 
-impl<A: Allocator> Apic<A> {
+impl Apic {
     pub(crate) fn new(
         local_apic_address: u64,
-        io_apics: Vec<IoApic, A>,
-        local_apic_nmi_lines: Vec<NmiLine, A>,
-        interrupt_source_overrides: Vec<InterruptSourceOverride, A>,
-        nmi_sources: Vec<NmiSource, A>,
+        io_apics: Vec<IoApic>,
+        local_apic_nmi_lines: Vec<NmiLine>,
+        interrupt_source_overrides: Vec<InterruptSourceOverride>,
+        nmi_sources: Vec<NmiSource>,
         also_has_legacy_pics: bool,
     ) -> Self {
         Self {

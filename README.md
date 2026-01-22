@@ -1,3 +1,11 @@
+# JJ here...
+
+This is a fork of the original rust acpi.  [If you don't care about stable rust, use that one.](https://github.com/rust-osdev/acpi)
+
+The only difference with this fork is that it is stable: it will only be using the global allocator.
+
+I will only keep the base source code up to date.  All credit goes to the original creators of the code.
+
 # Acpi
 ![Build Status](https://github.com/rust-osdev/acpi/actions/workflows/build.yml/badge.svg)
 [![Version](https://img.shields.io/crates/v/acpi.svg?style=rounded-square)](https://crates.io/crates/acpi/)

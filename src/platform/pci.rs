@@ -1,42 +1,37 @@
 use crate::{
-    AcpiError,
-    AcpiTables,
-    Handler,
+    AcpiError, AcpiTables, Handler,
     sdt::{
         Signature,
         mcfg::{Mcfg, McfgEntry},
     },
 };
-use alloc::{
-    alloc::{Allocator, Global},
-    vec::Vec,
-};
+use alloc::vec::Vec;
 
 /// Describes a set of regions of physical memory used to access the PCIe configuration space. A
 /// region is created for each entry in the MCFG. Given the segment group, bus, device number, and
 /// function of a PCIe device, [`PciConfigRegions::physical_address`] will give you the physical
 /// address of the start of that device function's configuration space (each function has 4096
 /// bytes of configuration space in PCIe).
-pub struct PciConfigRegions<A: Allocator = Global> {
-    pub regions: Vec<McfgEntry, A>,
+pub struct PciConfigRegions {
+    pub regions: Vec<McfgEntry>,
 }
 
-impl PciConfigRegions<Global> {
-    pub fn new<H>(tables: &AcpiTables<H>) -> Result<PciConfigRegions<Global>, AcpiError>
+impl PciConfigRegions {
+    pub fn new<H>(tables: &AcpiTables<H>) -> Result<PciConfigRegions, AcpiError>
     where
         H: Handler,
     {
-        Self::new_in(tables, Global)
+        Self::new_in(tables)
     }
 }
 
-impl<A: Allocator> PciConfigRegions<A> {
-    pub fn new_in<H>(tables: &AcpiTables<H>, allocator: A) -> Result<PciConfigRegions<A>, AcpiError>
+impl PciConfigRegions {
+    pub fn new_in<H>(tables: &AcpiTables<H>) -> Result<PciConfigRegions, AcpiError>
     where
         H: Handler,
     {
         let Some(mcfg) = tables.find_table::<Mcfg>() else { Err(AcpiError::TableNotFound(Signature::MCFG))? };
-        let regions = mcfg.entries().to_vec_in(allocator);
+        let regions = mcfg.entries().to_vec();
 
         Ok(Self { regions })
     }
